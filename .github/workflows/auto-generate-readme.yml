@@ -14,19 +14,41 @@ on:
         default: "docs: auto-update README"
 
 permissions:
-  contents: write   # REQUIRED
+  contents: write   # Required for committing README changes
 
 jobs:
   generate-docs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1.Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
+      # 2.Setup Terraform
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      # 3.Initialize and apply Terraform (local provider)
+      - name: Terraform Init and Apply
+        working-directory: ${{ inputs.working_dir }}
+        run: |
+          terraform init
+          terraform apply -auto-approve
+
+      # 4.Capture actual Terraform output values
+      - name: Capture Terraform Outputs
+        working-directory: ${{ inputs.working_dir }}
+        run: |
+          terraform output -json > tf_outputs.json
+          echo "<!-- BEGIN_REAL_OUTPUTS -->" > outputs_section.md
+          echo "## Actual Terraform Output Values" >> outputs_section.md
+          jq -r '. | to_entries[] | "- \(.key): \(.value.value)"' tf_outputs.json >> outputs_section.md
+          echo "<!-- END_REAL_OUTPUTS -->" >> outputs_section.md
+
+      # 5.Generate README via terraform-docs
       - name: Run terraform-docs
         uses: terraform-docs/gh-actions@v1.0.0
         with:
@@ -35,8 +57,20 @@ jobs:
           output-file: README.md
           output-method: inject
 
-      - name: Commit README changes
+      # 6.Inject actual outputs into README
+      - name: Inject Terraform Outputs into README
+        run: |
+          # Remove old outputs section
+          sed -i '/<!-- BEGIN_REAL_OUTPUTS -->/,/<!-- END_REAL_OUTPUTS -->/d' ${{ inputs.working_dir }}/README.md
+          # Append new outputs section
+          cat ${{ inputs.working_dir }}/outputs_section.md >> ${{ inputs.working_dir }}/README.md
+
+      # 7.Commit and push README changes
+      - name: Commit and push README changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: ${{ inputs.commit_message }}
           file_pattern: ${{ inputs.working_dir }}/README.md
+          commit_user_name: github-actions
+          commit_user_email: github-actions@github.com
+          push: true
