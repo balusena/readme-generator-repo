@@ -14,7 +14,7 @@ on:
         default: "docs: auto-update README"
 
 permissions:
-  contents: write   # Allows committing back to repo
+  contents: write   # Required to commit README.md
 
 jobs:
   generate-docs:
@@ -26,23 +26,27 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: true
 
-      # 2️⃣ Setup Terraform
+      # 2️⃣ Setup Terraform CLI
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # 3️⃣ Initialize Terraform & capture outputs
-      - name: Initialize Terraform
+      # 3️⃣ Initialize Terraform & capture all outputs
+      - name: Initialize Terraform & Capture Outputs
         working-directory: ${{ inputs.working_dir }}
         run: |
           terraform init -input=false
           terraform apply -auto-approve -input=false
           terraform output -json > tf_outputs.json
-          # Convert JSON outputs to markdown for README
-          echo '## Actual Terraform Output Values' > outputs_section.md
-          jq -r '. | to_entries[] | "- \(.key): \(.value.value)"' tf_outputs.json >> outputs_section.md
 
-      # 4️⃣ Run terraform-docs to inject into README
+          # Generate markdown section for README
+          echo '<!-- BEGIN_REAL_OUTPUTS -->' > outputs_section.md
+          echo '## Actual Terraform Output Values' >> outputs_section.md
+          jq -r '. | to_entries[] | "- **\(.key)**: \(.value.value)"' tf_outputs.json >> outputs_section.md
+          echo '<!-- END_REAL_OUTPUTS -->' >> outputs_section.md
+
+      # 4️⃣ Run terraform-docs to inject module documentation
       - name: Run terraform-docs
         uses: terraform-docs/gh-actions@v1.0.0
         with:
@@ -52,14 +56,14 @@ jobs:
           output-method: inject
 
       # 5️⃣ Append Terraform outputs to README
-      - name: Update Terraform outputs in README
+      - name: Inject Terraform Outputs into README
         run: |
+          # Remove old outputs section
           sed -i '/<!-- BEGIN_REAL_OUTPUTS -->/,/<!-- END_REAL_OUTPUTS -->/d' ${{ inputs.working_dir }}/README.md
-          echo '<!-- BEGIN_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
+          # Add updated outputs
           cat ${{ inputs.working_dir }}/outputs_section.md >> ${{ inputs.working_dir }}/README.md
-          echo '<!-- END_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
 
-      # 6️⃣ Fix Git permissions (important for hosted runners)
+      # 6️⃣ Fix Git permissions for hosted runners
       - name: Fix Git permissions
         run: sudo chown -R $USER:$USER .git
 
