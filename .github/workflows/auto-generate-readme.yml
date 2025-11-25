@@ -1,0 +1,41 @@
+name: Reusable README Generator
+
+on:
+  workflow_call:
+    inputs:
+      working_dir:
+        description: "Directory containing Terraform code"
+        required: true
+        type: string
+      commit_message:
+        description: "Commit message"
+        required: false
+        type: string
+        default: "docs: auto-update README"
+
+jobs:
+  generate-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Run terraform-docs
+        uses: terraform-docs/gh-actions@v1.0.0
+        with:
+          working-dir: ${{ inputs.working_dir }}
+          config-file: ${{ inputs.working_dir }}/.terraform-docs.yml
+          output-file: README.md
+          output-method: inject
+
+      - name: Commit README changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: ${{ inputs.commit_message }}
+          file_pattern: ${{ inputs.working_dir }}/README.md
