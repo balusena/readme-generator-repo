@@ -1,4 +1,4 @@
-name: Reusable README Generator
+name: Auto-generate README with Terraform Docs
 
 on:
   workflow_call:
@@ -14,36 +14,33 @@ on:
         default: "docs: auto-update README"
 
 permissions:
-  contents: write   # Required to commit back to repo
+  contents: write
 
 jobs:
-  generate-docs:
+  generate-readme:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout repository
+      # 1️⃣ Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: true
 
       # 2️⃣ Setup Terraform
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
       # 3️⃣ Initialize Terraform & capture outputs
-      - name: Initialize Terraform and capture outputs
+      - name: Terraform init & apply
         working-directory: ${{ inputs.working_dir }}
         run: |
           terraform init -input=false
           terraform apply -auto-approve -input=false
           terraform output -json > tf_outputs.json
-          echo '## Actual Terraform Output Values' > outputs_section.md
-          jq -r '. | to_entries[] | "- \(.key): \(.value.value)"' tf_outputs.json >> outputs_section.md
 
-      # 4️⃣ Run terraform-docs to inject documentation
-      - name: Run terraform-docs
+      # 4️⃣ Run terraform-docs
+      - name: Inject Terraform docs
         uses: terraform-docs/gh-actions@v1.0.0
         with:
           working-dir: ${{ inputs.working_dir }}
@@ -51,23 +48,45 @@ jobs:
           output-file: README.md
           output-method: inject
 
-      # 5️⃣ Append Terraform outputs to README
-      - name: Append Terraform outputs to README
+      # 5️⃣ Generate dynamic resource descriptions
+      - name: Generate Resource Descriptions
         run: |
-          sed -i '/<!-- BEGIN_REAL_OUTPUTS -->/,/<!-- END_REAL_OUTPUTS -->/d' ${{ inputs.working_dir }}/README.md
-          echo '<!-- BEGIN_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
-          cat ${{ inputs.working_dir }}/outputs_section.md >> ${{ inputs.working_dir }}/README.md
-          echo '<!-- END_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
+          echo '<!-- BEGIN_RESOURCE_DESCRIPTIONS -->' > resource_descriptions.md
+          echo '## Resource Descriptions' >> resource_descriptions.md
+          terraform state list | while read resource; do
+            echo "- $resource: Automatically captured from Terraform state." >> resource_descriptions.md
+          done
+          echo '<!-- END_RESOURCE_DESCRIPTIONS -->' >> resource_descriptions.md
 
-      # 6️⃣ Fix Git permissions (important for hosted runners)
+      # 6️⃣ Append Terraform outputs dynamically
+      - name: Generate Output Values Section
+        run: |
+          echo '## Actual Terraform Output Values' > outputs_section.md
+          jq -r '. | to_entries[] | "- \(.key): \(.value.value)"' tf_outputs.json >> outputs_section.md
+
+      # 7️⃣ Merge everything into README
+      - name: Update README
+        run: |
+          # Remove old sections
+          sed -i '/<!-- BEGIN_REAL_OUTPUTS -->/,/<!-- END_REAL_OUTPUTS -->/d' README.md
+          sed -i '/<!-- BEGIN_RESOURCE_DESCRIPTIONS -->/,/<!-- END_RESOURCE_DESCRIPTIONS -->/d' README.md
+          # Append resource descriptions
+          cat resource_descriptions.md >> README.md
+          # Append Terraform outputs
+          echo '<!-- BEGIN_REAL_OUTPUTS -->' >> README.md
+          cat outputs_section.md >> README.md
+          echo '<!-- END_REAL_OUTPUTS -->' >> README.md
+
+      # 8️⃣ Fix Git permissions
       - name: Fix Git permissions
-        run: sudo chown -R $(whoami):$(whoami) ${{ github.workspace }}/.git
+        run: sudo chown -R $USER:$USER .git
 
-      # 7️⃣ Commit and push README changes
+      # 9️⃣ Commit changes
       - name: Commit README changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: ${{ inputs.commit_message }}
-          file_pattern: ${{ inputs.working_dir }}/README.md
+          file_pattern: README.md
           commit_user_name: github-actions
           commit_user_email: github-actions@github.com
+          push_options: --force
