@@ -14,37 +14,36 @@ on:
         default: "docs: auto-update README"
 
 permissions:
-  contents: write   # Required to push changes back to the repo
+  contents: write  # required for committing changes
 
 jobs:
-  generate-docs:
+  generate-readme:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout repository with full history
+      # 1️⃣ Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       # 2️⃣ Setup Terraform
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # 3️⃣ Initialize Terraform, apply, and capture outputs
-      - name: Initialize Terraform & capture outputs
+      # 3️⃣ Initialize Terraform and capture outputs
+      - name: Terraform Init and Outputs
         working-directory: ${{ inputs.working_dir }}
         run: |
           terraform init -input=false
           terraform apply -auto-approve -input=false
           terraform output -json > tf_outputs.json
-          # Convert JSON outputs to Markdown
+          # Convert JSON outputs to markdown
           echo '## Actual Terraform Output Values' > outputs_section.md
-          jq -r '. | to_entries[] | "- \(.key): \(.value.value)"' tf_outputs.json >> outputs_section.md
+          jq -r '. | to_entries[] | "- **\(.key)**: \(.value.value)"' tf_outputs.json >> outputs_section.md
 
-      # 4️⃣ Run terraform-docs to inject into README
-      - name: Run terraform-docs
+      # 4️⃣ Run terraform-docs to inject module documentation
+      - name: Generate Terraform docs
         uses: terraform-docs/gh-actions@v1.0.0
         with:
           working-dir: ${{ inputs.working_dir }}
@@ -52,29 +51,15 @@ jobs:
           output-file: README.md
           output-method: inject
 
-      # 5️⃣ Append Terraform outputs section to README
-      - name: Update Terraform outputs in README
+      # 5️⃣ Append Terraform outputs to README
+      - name: Append Terraform outputs to README
         run: |
           sed -i '/<!-- BEGIN_REAL_OUTPUTS -->/,/<!-- END_REAL_OUTPUTS -->/d' ${{ inputs.working_dir }}/README.md
           echo '<!-- BEGIN_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
           cat ${{ inputs.working_dir }}/outputs_section.md >> ${{ inputs.working_dir }}/README.md
           echo '<!-- END_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
 
-      # 6️⃣ Fix Git permissions (for GitHub-hosted runners)
-      - name: Fix Git permissions
-        run: sudo chown -R $USER:$USER .git
-
-      # 7️⃣ Configure Git user
-      - name: Configure Git
-        run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-
-      # 8️⃣ Reset branch to avoid divergence errors
-      - name: Reset branch to origin/main
-        run: git reset --hard origin/main
-
-      # 9️⃣ Commit and push README changes
+      # 6️⃣ Commit and push changes
       - name: Commit README changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
@@ -82,4 +67,4 @@ jobs:
           file_pattern: ${{ inputs.working_dir }}/README.md
           commit_user_name: github-actions
           commit_user_email: github-actions@github.com
-          push_options: --force
+          push: true
