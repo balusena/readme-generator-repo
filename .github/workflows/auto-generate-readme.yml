@@ -14,7 +14,7 @@ on:
         default: "docs: auto-update README"
 
 permissions:
-  contents: write   # Needed to commit README.md back
+  contents: write   # Required to commit back to repo
 
 jobs:
   generate-docs:
@@ -39,11 +39,10 @@ jobs:
           terraform init -input=false
           terraform apply -auto-approve -input=false
           terraform output -json > tf_outputs.json
-          # Convert JSON outputs to markdown for README
           echo '## Actual Terraform Output Values' > outputs_section.md
-          jq -r '. | to_entries[] | "- **\(.key)**: \(.value.value)"' tf_outputs.json >> outputs_section.md
+          jq -r '. | to_entries[] | "- \(.key): \(.value.value)"' tf_outputs.json >> outputs_section.md
 
-      # 4️⃣ Run terraform-docs to inject module docs
+      # 4️⃣ Run terraform-docs to inject documentation
       - name: Run terraform-docs
         uses: terraform-docs/gh-actions@v1.0.0
         with:
@@ -53,20 +52,18 @@ jobs:
           output-method: inject
 
       # 5️⃣ Append Terraform outputs to README
-      - name: Update Terraform outputs in README
+      - name: Append Terraform outputs to README
         run: |
-          # Remove previous REAL_OUTPUTS section
           sed -i '/<!-- BEGIN_REAL_OUTPUTS -->/,/<!-- END_REAL_OUTPUTS -->/d' ${{ inputs.working_dir }}/README.md
-          # Append new outputs
           echo '<!-- BEGIN_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
           cat ${{ inputs.working_dir }}/outputs_section.md >> ${{ inputs.working_dir }}/README.md
           echo '<!-- END_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
 
-      # 6️⃣ Fix Git permissions
+      # 6️⃣ Fix Git permissions (important for hosted runners)
       - name: Fix Git permissions
-        run: sudo chown -R $(whoami) ${{ inputs.working_dir }}/.git
+        run: sudo chown -R $(whoami):$(whoami) ${{ github.workspace }}/.git
 
-      # 7️⃣ Commit README changes
+      # 7️⃣ Commit and push README changes
       - name: Commit README changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
@@ -74,4 +71,3 @@ jobs:
           file_pattern: ${{ inputs.working_dir }}/README.md
           commit_user_name: github-actions
           commit_user_email: github-actions@github.com
-          push_options: --force
