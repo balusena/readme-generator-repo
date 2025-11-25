@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout repository
+      # 1️⃣ Checkout repository with full history
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -58,7 +58,12 @@ jobs:
           cat ${{ inputs.working_dir }}/outputs_section.md >> ${{ inputs.working_dir }}/README.md
           echo '<!-- END_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
 
-      # 6️⃣ Commit and push README changes
+      # 6️⃣ Ensure Git permissions on hosted runners
+      - name: Fix Git permissions
+        run: |
+          sudo chown -R $USER:$USER .git
+
+      # 7️⃣ Commit and push README changes
       - name: Commit README changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
