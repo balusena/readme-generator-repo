@@ -14,14 +14,14 @@ on:
         default: "docs: auto-update README"
 
 permissions:
-  contents: write   # Allows committing back to repo
+  contents: write
 
 jobs:
   generate-docs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout repository with full history
+      # 1️⃣ Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -31,7 +31,12 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # 3️⃣ Initialize Terraform & capture outputs
+      # 3️⃣ Clear README to force regeneration
+      - name: Clear README
+        run: |
+          echo "" > ${{ inputs.working_dir }}/README.md
+
+      # 4️⃣ Initialize Terraform & capture outputs
       - name: Initialize Terraform and capture outputs
         working-directory: ${{ inputs.working_dir }}
         run: |
@@ -41,7 +46,16 @@ jobs:
           echo '## Actual Terraform Output Values' > outputs_section.md
           jq -r '. | to_entries[] | "- \(.key): \(.value.value)"' tf_outputs.json >> outputs_section.md
 
-      # 4️⃣ Run terraform-docs to inject docs into README
+      # 5️⃣ Capture resource descriptions from Terraform state
+      - name: Capture Resource Descriptions
+        working-directory: ${{ inputs.working_dir }}
+        run: |
+          echo '## Resource Descriptions' > resource_descriptions.md
+          terraform state list | while read res; do
+            echo "- $res: Automatically captured from Terraform state." >> resource_descriptions.md
+          done
+
+      # 6️⃣ Run terraform-docs to inject docs into README
       - name: Generate Terraform docs
         uses: terraform-docs/gh-actions@v1.0.0
         with:
@@ -50,20 +64,18 @@ jobs:
           output-file: README.md
           output-method: inject
 
-      # 5️⃣ Append actual Terraform outputs to README
-      - name: Append Terraform outputs to README
+      # 7️⃣ Append resource descriptions and Terraform outputs to README
+      - name: Append resource descriptions and outputs
         run: |
-          sed -i '/<!-- BEGIN_REAL_OUTPUTS -->/,/<!-- END_REAL_OUTPUTS -->/d' ${{ inputs.working_dir }}/README.md
+          echo '<!-- BEGIN_RESOURCE_DESCRIPTIONS -->' >> ${{ inputs.working_dir }}/README.md
+          cat ${{ inputs.working_dir }}/resource_descriptions.md >> ${{ inputs.working_dir }}/README.md
+          echo '<!-- END_RESOURCE_DESCRIPTIONS -->' >> ${{ inputs.working_dir }}/README.md
+          
           echo '<!-- BEGIN_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
           cat ${{ inputs.working_dir }}/outputs_section.md >> ${{ inputs.working_dir }}/README.md
           echo '<!-- END_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
 
-      # 6️⃣ Ensure Git permissions on hosted runners
-      - name: Fix Git permissions
-        run: |
-          sudo chown -R $USER:$USER .git
-
-      # 7️⃣ Commit and push README changes
+      # 8️⃣ Commit and push README changes
       - name: Commit README changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
