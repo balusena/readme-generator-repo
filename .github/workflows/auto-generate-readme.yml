@@ -8,13 +8,13 @@ on:
         required: true
         type: string
       commit_message:
-        description: "Commit message for README update"
+        description: "Commit message"
         required: false
         type: string
         default: "docs: auto-update README"
 
 permissions:
-  contents: write   # Required to commit changes
+  contents: write   # Required to commit back to the repo
 
 jobs:
   generate-docs:
@@ -27,11 +27,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      # 2️⃣ Setup Terraform CLI
+      # 2️⃣ Setup Terraform
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # 3️⃣ Initialize Terraform, apply, and capture outputs
+      # 3️⃣ Initialize Terraform & capture outputs
       - name: Initialize Terraform & capture outputs
         working-directory: ${{ inputs.working_dir }}
         run: |
@@ -42,8 +42,8 @@ jobs:
           echo '## Actual Terraform Output Values' > outputs_section.md
           jq -r '. | to_entries[] | "- \(.key): \(.value.value)"' tf_outputs.json >> outputs_section.md
 
-      # 4️⃣ Run terraform-docs to update README
-      - name: Generate Terraform README
+      # 4️⃣ Run terraform-docs to inject requirements, providers, inputs, outputs
+      - name: Run terraform-docs
         uses: terraform-docs/gh-actions@v1.0.0
         with:
           working-dir: ${{ inputs.working_dir }}
@@ -51,19 +51,15 @@ jobs:
           output-file: README.md
           output-method: inject
 
-      # 5️⃣ Inject actual Terraform outputs into README
-      - name: Inject Terraform outputs into README
+      # 5️⃣ Inject Terraform outputs into README between markers
+      - name: Update Terraform outputs in README
         run: |
           sed -i '/<!-- BEGIN_REAL_OUTPUTS -->/,/<!-- END_REAL_OUTPUTS -->/d' ${{ inputs.working_dir }}/README.md
           echo '<!-- BEGIN_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
           cat ${{ inputs.working_dir }}/outputs_section.md >> ${{ inputs.working_dir }}/README.md
           echo '<!-- END_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
 
-      # 6️⃣ Fix Git permissions on hosted runner
-      - name: Fix Git permissions
-        run: sudo chown -R $USER:$USER .git
-
-      # 7️⃣ Commit and push README changes
+      # 6️⃣ Commit README changes
       - name: Commit README changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
@@ -71,5 +67,4 @@ jobs:
           file_pattern: ${{ inputs.working_dir }}/README.md
           commit_user_name: github-actions
           commit_user_email: github-actions@github.com
-          repository: ${{ github.repository }}
           push_options: --force
