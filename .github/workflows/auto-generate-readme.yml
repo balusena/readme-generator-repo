@@ -14,29 +14,35 @@ on:
         default: "docs: auto-update README"
 
 permissions:
-  contents: write   # Required so workflow can commit
+  contents: write   # Allows committing back to repo
 
 jobs:
   generate-docs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1.Checkout repo with full history and credentials
+      # 1️⃣ Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: true
 
-      # 2.Fix Git permissions (sometimes needed on GitHub-hosted runners)
-      - name: Fix git permissions
-        run: sudo chown -R $USER:$USER .git
-
-      # 3.Setup Terraform CLI
+      # 2️⃣ Setup Terraform
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # 4.Run terraform-docs to inject docs into README
+      # 3️⃣ Initialize Terraform & capture outputs
+      - name: Initialize Terraform
+        working-directory: ${{ inputs.working_dir }}
+        run: |
+          terraform init -input=false
+          terraform apply -auto-approve -input=false
+          terraform output -json > tf_outputs.json
+          # Convert JSON outputs to markdown for README
+          echo '## Actual Terraform Output Values' > outputs_section.md
+          jq -r '. | to_entries[] | "- \(.key): \(.value.value)"' tf_outputs.json >> outputs_section.md
+
+      # 4️⃣ Run terraform-docs to inject into README
       - name: Run terraform-docs
         uses: terraform-docs/gh-actions@v1.0.0
         with:
@@ -45,24 +51,19 @@ jobs:
           output-file: README.md
           output-method: inject
 
-      # 5.Capture Terraform outputs (file_path, location, project)
-      - name: Capture Terraform Outputs
-        working-directory: ${{ inputs.working_dir }}
-        run: |
-          terraform output -json > tf_outputs.json
-          echo "## Terraform Output Values" > outputs_section.md
-          jq -r '. | to_entries[] | "- \(.key): \(.value.value)"' tf_outputs.json >> outputs_section.md
-
-      # 6.Update README with actual Terraform outputs
+      # 5️⃣ Append Terraform outputs to README
       - name: Update Terraform outputs in README
         run: |
           sed -i '/<!-- BEGIN_REAL_OUTPUTS -->/,/<!-- END_REAL_OUTPUTS -->/d' ${{ inputs.working_dir }}/README.md
           echo '<!-- BEGIN_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
-          echo '## Actual Terraform Output Values' >> ${{ inputs.working_dir }}/README.md
           cat ${{ inputs.working_dir }}/outputs_section.md >> ${{ inputs.working_dir }}/README.md
           echo '<!-- END_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
 
-      # 7.Commit and push README.md changes
+      # 6️⃣ Fix Git permissions (important for hosted runners)
+      - name: Fix Git permissions
+        run: sudo chown -R $USER:$USER .git
+
+      # 7️⃣ Commit and push README changes
       - name: Commit README changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
