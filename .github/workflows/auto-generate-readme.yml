@@ -32,7 +32,7 @@ jobs:
       - name: Fix git permissions
         run: sudo chown -R $USER:$USER .git
 
-      # 3️⃣ Setup Terraform CLI
+      # 3.Setup Terraform CLI
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
