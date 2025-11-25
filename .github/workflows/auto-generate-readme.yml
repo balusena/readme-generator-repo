@@ -13,6 +13,9 @@ on:
         type: string
         default: "docs: auto-update README"
 
+permissions:
+  contents: write   # REQUIRED
+
 jobs:
   generate-docs:
     runs-on: ubuntu-latest
@@ -20,8 +23,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
