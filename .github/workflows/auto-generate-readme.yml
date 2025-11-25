@@ -1,16 +1,23 @@
-name: Generate README with Terraform Outputs
+name: Reusable README Generator
 
 on:
-  workflow_dispatch:   # Manual trigger
-  push:
-    branches:
-      - main
+  workflow_call:
+    inputs:
+      working_dir:
+        description: "Directory containing Terraform code"
+        required: true
+        type: string
+      commit_message:
+        description: "Commit message for README updates"
+        required: false
+        type: string
+        default: "docs: auto-update README"
 
 permissions:
-  contents: write
+  contents: write   # Allows committing back to repo
 
 jobs:
-  update-readme:
+  generate-docs:
     runs-on: ubuntu-latest
 
     steps:
@@ -25,48 +32,38 @@ jobs:
         uses: hashicorp/setup-terraform@v3
 
       # 3️⃣ Initialize Terraform & capture outputs
-      - name: Terraform Init & Apply
+      - name: Initialize Terraform and capture outputs
+        working-directory: ${{ inputs.working_dir }}
         run: |
           terraform init -input=false
           terraform apply -auto-approve -input=false
           terraform output -json > tf_outputs.json
-          # Prepare markdown table for Outputs
-          echo '| Name | Description | Value |' > outputs_table.md
-          echo '|------|-------------|-------|' >> outputs_table.md
-          jq -r '. | to_entries[] | "| \(.key) | n/a | \(.value.value) |"' tf_outputs.json >> outputs_table.md
-          # Prepare simple output list
           echo '## Actual Terraform Output Values' > outputs_section.md
           jq -r '. | to_entries[] | "- \(.key): \(.value.value)"' tf_outputs.json >> outputs_section.md
 
-      # 4️⃣ Run terraform-docs to generate schema
-      - name: Generate Terraform Docs
+      # 4️⃣ Run terraform-docs to inject docs into README
+      - name: Generate Terraform docs
         uses: terraform-docs/gh-actions@v1.0.0
         with:
-          working-dir: "."
-          config-file: ./.terraform-docs.yml
+          working-dir: ${{ inputs.working_dir }}
+          config-file: ${{ inputs.working_dir }}/.terraform-docs.yml
           output-file: README.md
           output-method: inject
 
-      # 5️⃣ Replace Outputs table in README with actual values
-      - name: Update Outputs Table in README
+      # 5️⃣ Append actual Terraform outputs to README
+      - name: Append Terraform outputs to README
         run: |
-          sed -i '/## Outputs/,/<!-- END_TF_DOCS -->/c\' README.md
-          cat outputs_table.md >> README.md
+          sed -i '/<!-- BEGIN_REAL_OUTPUTS -->/,/<!-- END_REAL_OUTPUTS -->/d' ${{ inputs.working_dir }}/README.md
+          echo '<!-- BEGIN_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
+          cat ${{ inputs.working_dir }}/outputs_section.md >> ${{ inputs.working_dir }}/README.md
+          echo '<!-- END_REAL_OUTPUTS -->' >> ${{ inputs.working_dir }}/README.md
 
-      # 6️⃣ Append Actual Output Values section
-      - name: Append Real Outputs Section
-        run: |
-          sed -i '/<!-- BEGIN_REAL_OUTPUTS -->/,/<!-- END_REAL_OUTPUTS -->/d' README.md
-          echo '<!-- BEGIN_REAL_OUTPUTS -->' >> README.md
-          cat outputs_section.md >> README.md
-          echo '<!-- END_REAL_OUTPUTS -->' >> README.md
-
-      # 7️⃣ Commit & push changes
+      # 6️⃣ Commit and push README changes
       - name: Commit README changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "docs: auto-update README with Terraform outputs"
-          file_pattern: README.md
+          commit_message: ${{ inputs.commit_message }}
+          file_pattern: ${{ inputs.working_dir }}/README.md
           commit_user_name: github-actions
           commit_user_email: github-actions@github.com
           push_options: --force
